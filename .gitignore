@@ -1,0 +1,8 @@
+.venv/
+.linux-venv/
+.runtime/
+__pycache__/
+.pytest_cache/
+*.pyc
+.streamlit/secrets.toml
+tp1-datamining.ipynb
