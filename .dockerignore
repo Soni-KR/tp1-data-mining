@@ -1,9 +1,0 @@
-.venv
-.linux-venv
-.runtime
-.git
-__pycache__
-.pytest_cache
-.streamlit/secrets.toml
-*.ipynb
-*.pdf

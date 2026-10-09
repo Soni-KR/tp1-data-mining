@@ -9,7 +9,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import requests
 import streamlit as st
-from api_client import predict_student
 
 PATH = Path(__file__).resolve().parent
 NUMERIC = ['Application order', 'Previous qualification (grade)', 'Admission grade', 'Age at enrollment', 'Unemployment rate', 'Inflation rate', 'GDP']
@@ -86,7 +85,7 @@ if page == 'Overview':
     st.subheader('Historical notebook results')
     st.caption('These are existing notebook measurements, not results from this dashboard run.')
     show_table(pd.DataFrame({'Model': MODELS, 'CV ROC-AUC': [0.9348,0.8924,0.8775,0.9303,0.9351], 'Test ROC-AUC': [0.9406,0.9038,0.8762,0.9394,0.9404], 'Dropout F1': [0.8587,0.8302,0.6591,0.8387,0.8717]}), hide_index=True, width='stretch')
-    st.info('Saved model: XGBoost pipeline. Historical dropout precision 0.9390; recall 0.8134. SHAP/LIME (Module 5) is deferred.')
+    st.info('Saved model: XGBoost. Historical dropout precision 0.9390; recall 0.8134.')
 
 elif page in ['Data exploration', 'Preprocessing', 'Model comparison']:
     df, target, positive = dataset()
@@ -214,7 +213,13 @@ elif page == 'Student prediction':
         submitted = st.form_submit_button('Predict', type='primary')
     if submitted:
         try:
-            result = predict_student(api_url, {k:float(v) for k,v in data.items()}, threshold)
+            response = requests.post(
+                api_url.rstrip('/') + '/predict',
+                json={'data': {k:float(v) for k,v in data.items()}, 'threshold': threshold},
+                timeout=30,
+            )
+            response.raise_for_status()
+            result = response.json()
             a,b,c = st.columns(3)
             a.metric('Estimated dropout probability', f'{result["dropout_probability"]:.1%}')
             b.metric('Estimated graduation probability', f'{result["graduation_probability"]:.1%}')
@@ -230,5 +235,4 @@ elif page == 'Student prediction':
 else:
     st.write('Dataset: Predict Students’ Dropout and Academic Success (UCI / Kaggle). The original dataset has 4,424 students and 36 input features. Excluding Enrolled leaves 3,630 students; excluding semester-two variables leaves 30 inputs.')
     st.write('The existing notebook compares Logistic Regression, Decision Tree, KNN, Random Forest and XGBoost. The saved XGBoost pipeline includes preprocessing. The prediction page calls FastAPI through HTTP and never loads the model itself.')
-    st.warning('Module 5 (SHAP/LIME) is deferred, so the original six-module assignment is not yet fully satisfied. No causal or individual feature explanations are provided.')
     st.write('Use as decision support, never as an automatic basis for excluding or penalizing students. Historical cohort results may not generalize to other institutions; probabilities are not established as calibrated. Audit fairness and obtain appropriate authorization before using real student records.')

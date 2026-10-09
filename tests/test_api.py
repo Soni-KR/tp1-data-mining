@@ -64,12 +64,3 @@ def test_real_pipeline_predictions():
         assert result['prediction'] == ('Dropout' if result['dropout_probability'] >= threshold else 'Graduate')
         assert result['threshold'] == threshold
         assert result['risk_level'] in ['Low', 'Medium', 'High']
-
-def test_http_client(monkeypatch):
-    import api_client
-    def post(url, json, timeout):
-        assert url == 'http://testserver/predict'
-        return client.post('/predict', json=json)
-    monkeypatch.setattr(api_client.requests, 'post', post)
-    result = api_client.predict_student('http://testserver/', student, 0.4)
-    assert result['threshold'] == 0.4

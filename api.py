@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 path = Path(__file__).resolve().parent
-features = joblib.load(path / "features.pkl")
+features = pd.read_csv(path / "reference.csv", nrows=0).columns.tolist()
 app = FastAPI(title="EduGuard API", version="1.0", description="Student decision support: Dropout=0, Graduate=1.")
 
 @lru_cache

@@ -19,7 +19,7 @@ def test_prediction_form_uses_http_client(monkeypatch):
     # A controlled model verifies the UI/HTTP contract independently of Windows DLL loading.
     from types import SimpleNamespace
     import numpy as np
-    import api_client
+    import requests
     from fastapi.testclient import TestClient
     import api
     monkeypatch.setattr(api, 'get_model', lambda: SimpleNamespace(classes_=[0,1], predict_proba=lambda frame: np.array([[0.8,0.2]])))
@@ -28,7 +28,7 @@ def test_prediction_form_uses_http_client(monkeypatch):
     def post(url, json, timeout):
         calls.append(json)
         return client.post('/predict', json=json)
-    monkeypatch.setattr(api_client.requests, 'post', post)
+    monkeypatch.setattr(requests, 'post', post)
     app = AppTest.from_file(str(APP), default_timeout=30).run()
     app.sidebar.radio[0].set_value('Student prediction').run()
     next(button for button in app.button if button.label == 'Predict').click().run()

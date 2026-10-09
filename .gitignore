@@ -6,3 +6,15 @@ __pycache__/
 *.pyc
 .streamlit/secrets.toml
 tp1-datamining.ipynb
+
+# Local source copies and optional files; not needed by the application.
+model.pkl
+features.pkl
+data.csv
+Projet_Challenge_1_Classification_Explicable.pdf
+TEST_RESULTS.md
+Dockerfile
+.dockerignore
+api_client.py
+.streamlit/secrets.toml.example
+screenshots/api_docs.png
