@@ -1,53 +1,25 @@
-# EduGuard — short test report
+# Test report
 
-Date: 9 October 2026.
+**9 October 2026 — 11 tests passed on Windows Python 3.13.**
 
-## What works
+Verified:
 
-- FastAPI starts; its home page, feature list and interactive documentation respond.
-- Streamlit starts and all seven dashboard pages open.
-- Dataset exploration and editable student inputs work.
-- The app sends prediction requests to FastAPI and displays a clear error when the model is unavailable.
-- Input validation, threshold rules and risk categories passed controlled tests.
-- The existing model and notebooks were preserved.
+- API starts; /docs works; /features returns 30 semester-one inputs.
+- Health reports readiness accurately.
+- Valid students produce real probabilities; invalid features and thresholds are rejected.
+- Probabilities sum to one; thresholds and risk boundaries behave correctly.
+- API predictions match direct pipeline inference.
+- All seven dashboard pages and manual student inputs work.
+- Training works with an alternative CSV and through the dashboard.
+- Evaluation curves, confusion matrix and threshold controls render.
+- The live Streamlit prediction form communicates with FastAPI over HTTP.
 
-## What is still blocked
+**Real example:** reference row 0 returns 78.1% dropout probability, 21.9% graduation probability and High risk. At threshold .50 it predicts Dropout; at .90 it predicts Graduate. reference.csv has no outcome labels, so this verifies inference, not accuracy.
 
-**Real predictions and training do not currently work in this Windows environment.**
+The original model.pkl and notebook are unchanged. Portable model files matched the recovered original pipeline exactly on 100 profiles. Compatible scientific packages resolved Windows DLL failures without changing security settings.
 
-Windows Application Control blocks scikit-learn's compiled component. It also blocks PyArrow; the dashboard uses an HTML table fallback so tables still display. No security settings were changed.
+The one-pager was checked to contain exactly one page and visually reviewed. Screenshots show the working dashboard, prediction and API docs.
 
-The saved pipeline records scikit-learn 1.6.1 and XGBoost 3.4.1. The current Windows environment has scikit-learn 1.9.1. Fresh deployment requirements match the saved model.
+Run: `.\.venv\Scripts\python.exe -m pytest -q`.
 
-## Test results
-
-**7 tests passed; 4 failed.**
-
-The failed tests require the blocked model/runtime:
-
-1. Real saved-model prediction and comparison with direct inference.
-2. The HTTP client receiving a real prediction.
-3. Training on an alternative labeled dataset.
-4. Training through Streamlit and showing its evaluation results.
-
-Successful controlled tests use a test model to check the connection and decision rules. They do not prove the saved XGBoost model can run.
-
-Live checks also confirmed that both servers respond and the dashboard handles an actual API prediction failure without crashing. Test servers were stopped afterward.
-
-## How to check it yourself
-
-1. Double-click **start_eduguard.bat**.
-2. Open **http://localhost:8501**.
-3. Click **Check API readiness**.
-4. If ready, go to **Student prediction**, select a profile and click **Predict**.
-5. If unavailable, real model testing remains blocked; seeing the dashboard is not sufficient.
-
-You can also use **http://localhost:8000/docs** to test /health and /predict by clicking Try it out and Execute.
-
-## Before submission
-
-- Get real predictions working on an allowed compatible runtime and rerun the four outstanding checks.
-- Publish the frontend and backend, then configure the frontend's API URL.
-- Clearly state that Module 5 (SHAP/LIME) is deferred.
-
-Docker and Linux setup are optional and were not fully tested. No online deployment has been performed. Historical accuracy results come from the existing notebook, not new local inference tests.
+**Still to submit:** public deployment URLs and the deferred SHAP/LIME module. The optional API Docker image has not been built/tested locally. Historical performance figures come from the existing notebook.

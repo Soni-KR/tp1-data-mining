@@ -13,7 +13,16 @@ app = FastAPI(title="EduGuard API", version="1.0", description="Student decision
 
 @lru_cache
 def get_model():
-    model = joblib.load(path / "model.pkl")
+    from sklearn.pipeline import Pipeline
+    from xgboost import XGBClassifier
+
+    # Existing trained weights, exported to XGBoost's portable model format.
+    classifier = XGBClassifier()
+    classifier.load_model(path / "xgboost_model.json")
+    model = Pipeline([
+        ('preprocessing', joblib.load(path / "preprocessing.pkl")),
+        ('model', classifier),
+    ])
     if list(model.feature_names_in_) != features or set(model.classes_) != {0, 1}:
         raise ValueError("Saved model does not match the features or target mapping")
     if any("Curricular units 2nd sem" in f for f in features):

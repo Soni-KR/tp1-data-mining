@@ -1,103 +1,61 @@
-# EduGuard — simple guide
+# EduGuard
 
-EduGuard estimates whether a student may drop out or graduate using information available at the **end of semester one**. It supports academic follow-up; predictions are not certain outcomes.
+ENSI Data Mining project: estimate student dropout risk **at the end of semester one**. Streamlit is the dashboard; FastAPI runs the existing trained model through HTTP.
 
-## 1. Open the application
+## Try it locally
 
-Open this folder:
+In this project folder, double-click **start_eduguard.bat** and keep the two server windows open.
 
-`C:\Users\moura\Desktop\ENSI\3eme\data mining`
+1. Open [the dashboard](http://localhost:8501).
+2. Click **Check API readiness**. It should say **Model is ready**.
+3. Open **Student prediction**, select reference row **0**, and click **Predict**.
+4. Expected example: **78.1% dropout probability**, **21.9% graduation probability**, **High risk**.
+5. Try another profile or edit a fictional student.
 
-Double-click **start_eduguard.bat**. It starts two programs:
+No retraining is needed. Localhost means your own computer; it is not an online deployment. Avoid starting the launcher again while both servers are already running.
 
-- **FastAPI** runs the saved model.
-- **Streamlit** shows the dashboard in your browser.
+**Browser API test:** open [FastAPI docs](http://localhost:8000/docs), expand **POST /predict**, click **Try it out**, keep the supplied example, then **Execute**.
 
-Keep their two windows open. Open [the dashboard](http://localhost:8501) if the browser does not open automatically. Close both windows when finished.
-
-**Localhost means your own computer.** The app runs locally; it is not published online.
-
-If you prefer terminals, run these commands in two separate PowerShell windows, from the project folder:
+On a fresh clone, install Python 3.12 or 3.13 and run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8000
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+To start manually, use two terminals:
+
 ```powershell
+.\.venv\Scripts\python.exe -m uvicorn api:app --port 8000
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-## 2. Test a student without writing code
+## What the dashboard does
 
-1. Open [http://localhost:8501](http://localhost:8501).
-2. Keep **FastAPI URL** set to `http://127.0.0.1:8000`.
-3. Click **Check API readiness** in the sidebar.
-4. If it says **Model is ready**, open **Student prediction**.
-5. Choose **Existing reference profile** and select a row.
-6. Keep the threshold at **0.50**, then click **Predict**.
-7. Read the dropout probability, graduation probability, predicted outcome and risk category.
-8. Try another row, or choose **Fictional / edited profile** to change the inputs.
-
-No retraining is needed to use the saved model.
-
-**Current blocker:** on this Windows environment, Application Control blocks scikit-learn. You can open and explore the dashboard, but real predictions and training currently fail. An unavailable-model message is honest reporting, not a successful prediction. Starting FastAPI does not fix this restriction.
-
-Do not disable Windows security. To finish model testing, use an allowed environment with compatible dependencies; optional deployment files are included.
-
-## 3. Understand the result
-
-- **Dropout probability:** the model's estimated risk, not a confirmed future outcome.
-- **Graduation probability:** the complementary estimate. Both probabilities sum to 100%.
-- **Threshold:** predicts Dropout when its probability is at least this value. At 0.50, a 60% dropout estimate is classified as Dropout.
-- Lowering the threshold flags more students; raising it flags fewer.
-- **Risk category:** Low below 30%; Medium from 30% to below 70%; High at 70% or more.
-
-Risk categories stay the same when you change the threshold. Their boundaries are application choices, not validated risk bands. Suggested follow-up includes counseling, tutoring, financial-support assessment and supportive outreach.
-
-## 4. Test FastAPI directly in the browser
-
-Open [http://localhost:8000/docs](http://localhost:8000/docs).
-
-- Expand **GET /health**, click **Try it out**, then **Execute**.
-- **200 + model_ready: true** means a sample model prediction succeeded.
-- **503 + model_ready: false** means the model is unavailable.
-- Expand **POST /predict**, click **Try it out**, keep the supplied student example, then **Execute**.
-- A successful response shows probabilities, prediction, risk level and threshold.
-- Change only `threshold` to test a different decision boundary.
-
-The example uses real feature values from reference.csv; it does not contain the student's actual outcome.
-
-Other endpoints: **GET /** (service information), **GET /features** (30 expected feature names). Missing or extra features return **422**. Model-loading failure returns **503**.
-
-## 5. Use the other dashboard pages
-
-| Page | What to do |
+| Page | Purpose |
 |---|---|
-| Overview | Read the objective, dataset summary and historical model results. |
-| Data exploration | Inspect the labeled dataset, missing values, charts and correlations. You can also upload a labeled CSV. |
-| Preprocessing | Select features and processing settings; click Save preprocessing settings. |
-| Model comparison | Select algorithms; click Train and compare. GridSearchCV is optional and slower. |
-| Evaluation | After training, inspect metrics and curves; explore thresholds using training results before viewing held-out test results. |
-| Student prediction | Use the existing saved model through FastAPI. |
-| About | Read limitations and the project's scope. |
+| Overview | Objective, dataset summary and historical results. |
+| Data exploration | Automatic data loading or CSV upload, statistics and interactive charts. |
+| Preprocessing | Target/features, missing values, one-hot encoding, scaling and split settings. |
+| Model comparison | Select algorithms and hyperparameters; train explicitly; optional GridSearchCV. |
+| Evaluation | ROC/PR curves, confusion matrix, metrics and threshold controls. |
+| Student prediction | Existing or fictional profile; real HTTP prediction through FastAPI. |
+| About | Scope and limitations. |
 
-Training runs only when you click its button. Dashboard experiments do not replace model.pkl. Preprocessing is fitted inside training pipelines to avoid data leakage. Custom CSVs need a binary target and a selected class of interest.
+Training only runs when you click **Train and compare**. Save preprocessing settings before training. Experimental models stay in session memory and do not replace the saved prediction model.
 
-Do not keep adjusting thresholds based on the final test set. Out-of-fold training results after hyperparameter tuning are exploratory estimates.
+## Data and model
 
-## 6. Project facts for your presentation
+Source: [UCI dataset 697](https://archive.ics.uci.edu/dataset/697/predict+students+dropout+and+academic+success) / [Kaggle](https://www.kaggle.com/datasets/mattop/predict-students-dropout-and-academic-success).
 
-Dataset: [UCI](https://archive.ics.uci.edu/dataset/697/predict+students+dropout+and+academic+success) / [Kaggle](https://www.kaggle.com/datasets/mattop/predict-students-dropout-and-academic-success).
+- Original: 4,424 students, 36 features, three outcomes.
+- Remove Enrolled because their final outcome is unknown: **3,630 students**, including 1,421 Dropout and 2,209 Graduate.
+- Remove all six semester-two variables because they are unavailable at prediction time: **30 inputs**.
+- Target mapping stays **Dropout=0, Graduate=1**.
+- Stratified 80/20 split; StandardScaler, OneHotEncoder and binary indicators within pipelines. Preprocessing is fitted only on training folds.
+- Five models: Logistic Regression, Decision Tree, KNN, Random Forest and XGBoost; five-fold GridSearchCV when requested.
 
-- Original data: 4,424 students, 36 features, three outcomes.
-- Enrolled is removed because the final outcome is unknown.
-- Remaining data: 3,630 students — 1,421 Dropout and 2,209 Graduate.
-- All semester-two variables are removed because they are unavailable at prediction time.
-- Model inputs: 30 features. Target mapping: **Dropout=0, Graduate=1**.
-- Notebook processing: stratified 80/20 split, StandardScaler, OneHotEncoder, binary indicators preserved; five-fold GridSearchCV.
-- Five algorithms: Logistic Regression, Decision Tree, KNN, Random Forest and XGBoost.
-
-Historical notebook results, not new dashboard measurements:
+Historical notebook results, not new measurements:
 
 | Model | CV ROC-AUC | Test ROC-AUC | Dropout F1 |
 |---|---:|---:|---:|
@@ -107,35 +65,62 @@ Historical notebook results, not new dashboard measurements:
 | Random Forest | .9303 | .9394 | .8387 |
 | XGBoost | .9351 | .9404 | .8717 |
 
-Saved XGBoost dropout precision: .9390; recall: .8134. These results do not establish performance at another university or calibrated probabilities. Historical model selection considered test results, so an external untouched dataset is needed for an unbiased final assessment.
+XGBoost was retained for its dropout F1. Historical dropout precision: .9390; recall: .8134.
 
-**Module 5 (SHAP/LIME) is deferred.** The project does not yet satisfy all six original modules. It provides no individual causal explanations and should not make automatic decisions about students.
+## Understand predictions
 
-## 7. Know the important files
+A probability is an estimate, not a confirmed outcome. **Dropout** is predicted when dropout probability is at least the threshold (default **0.50**).
 
-| File | Purpose |
+Risk categories: **Low <30%**, **Medium 30–<70%**, **High >=70%**. These application-defined bands are not statistically validated and do not change with the threshold.
+
+Choose thresholds using training validation results before inspecting the held-out test. After GridSearchCV, displayed out-of-fold estimates are exploratory because parameters were selected on the same training data. Historical selection also consulted test results; external validation is still needed. Probabilities are not established as calibrated. Sex, age, nationality and family-status variables require fairness review. Use the score for supportive follow-up, never automatic exclusion or penalties.
+
+## API
+
+| Endpoint | Result |
 |---|---|
-| start_eduguard.bat | Double-click to start the local app. |
-| app.py | Streamlit dashboard. |
-| api.py | FastAPI prediction service. |
-| api_client.py | Sends dashboard requests to FastAPI. |
-| ml_utils.py | Optional model-training and evaluation helpers. |
-| model.pkl | Existing trained pipeline, including preprocessing. |
-| features.pkl | Names of the 30 model inputs. |
-| reference.csv | Example profiles without labels; not accuracy ground truth. |
-| data.csv | Complete labeled dataset for exploration and experiments. |
-| prj1-datamining.ipynb | Existing training notebook, preserved. |
-| requirements.txt | Dependencies for a fresh compatible Python 3.12 environment. |
-| TEST_RESULTS.md | Short test report and unresolved work. |
+| GET / | Service information. |
+| GET /health | 200 only after a real sample prediction succeeds; 503 if unavailable. |
+| GET /features | The 30 expected names. |
+| POST /predict | Accepts data and optional threshold; returns both probabilities, prediction, risk level and threshold. |
+| /docs | Interactive documentation with a valid student example. |
 
-## 8. Deployment and remaining work
+Missing/extra features or invalid thresholds return **422**. Model failure returns **503**. The frontend calls FastAPI through requests; it does not load the saved model for predictions.
 
-The simplest prepared arrangement is **FastAPI on a compatible server + Streamlit on Streamlit Community Cloud**. Set `EDUGUARD_API_URL` in the frontend's environment or Streamlit secrets to the backend's public URL. A cloud frontend cannot use your computer's localhost.
+## Files to know
 
-The saved model records scikit-learn **1.6.1** and XGBoost **3.4.1**; requirements match these versions. The current Windows environment has scikit-learn 1.9.1 and is also blocked by policy. Repeated reinstalling is not the proposed fix.
+- **app.py**, **api.py**, **api_client.py**, **ml_utils.py**: dashboard, service, HTTP connection and optional experiments.
+- **prj1-datamining.ipynb** and **model.pkl**: original notebook and trained model, preserved.
+- **preprocessing.pkl** and **xgboost_model.json**: portable copies of the existing fitted preprocessing and 200 trained trees, used by FastAPI; no retraining.
+- **features.pkl** and **reference.csv**: feature names and example profiles. reference.csv has no labels and cannot measure accuracy.
+- **data.csv**: labeled data. If absent, the dashboard downloads the public dataset automatically.
+- **requirements.txt**, **start_eduguard.bat**, **Dockerfile**, **tests/**: installation, local launch, optional API container and verification.
 
-Dockerfile and compose.yaml are optional. If Docker Desktop's Linux engine is running, `docker compose up --build` starts both services. setup_linux.sh is another optional setup helper; neither path has been fully verified.
+Windows imports were fixed using compatible package versions. The original XGBoost runtime snapshot would not load; its stable trained-model section was exported to JSON. The portable copy matched the recovered pipeline exactly on 100 profiles.
 
-Before submission: successfully test real predictions, deploy the app, and disclose the deferred SHAP/LIME module. No external deployment or account creation has been done.
+## Assignment deliverables
 
-Optional automated checks: `.\.venv\Scripts\python.exe -m pytest -q`. You do not need this command for browser-based testing.
+| Required by the PDF | Current status |
+|---|---|
+| Deployed app covering six modules | Local app works. Online deployment and Module 5 remain unfinished. |
+| Documented FastAPI called by the app | Prediction API works. SHAP/LIME interpretation endpoints are deferred. |
+| GitHub: code, notebook, requirements, README, links and screenshots | Included in [this repository](https://github.com/Soni-KR/tp1-data-mining). |
+| One-page PDF: problem, data, model, results, explanation, recommendations and limits | [ONE_PAGER.pdf](ONE_PAGER.pdf); missing XAI is explicitly disclosed. |
+
+**SHAP/LIME is deliberately deferred. The original six-module assignment is not yet fully satisfied.** No causal explanations are fabricated.
+
+## Screenshots
+
+![Overview](screenshots/overview.png)
+
+![Real student prediction](screenshots/prediction.png)
+
+[API documentation screenshot](screenshots/api_docs.png)
+
+## Tests and deployment
+
+Run `.\.venv\Scripts\python.exe -m pytest -q`. Latest result: **11 passed**. See [TEST_RESULTS.md](TEST_RESULTS.md).
+
+For deployment, host FastAPI on a compatible backend service and app.py on Streamlit Community Cloud. Set **EDUGUARD_API_URL** in Streamlit secrets or the environment to the backend's public HTTPS URL. A deployed frontend cannot use your personal computer's localhost. Include preprocessing.pkl, xgboost_model.json, features.pkl and reference.csv with the backend. Dockerfile optionally packages the API.
+
+No public app/API URLs exist yet. Before submission, deploy both services, verify /health and a prediction online, add their URLs here, and disclose or complete Module 5.

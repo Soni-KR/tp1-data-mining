@@ -12,9 +12,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-NUMERICAL = ['Application order', 'Previous qualification (grade)', 'Admission grade', 'Age at enrollment', 'Unemployment rate', 'Inflation rate', 'GDP']
 BINARY = ['Daytime/evening attendance', 'Displaced', 'Educational special needs', 'Debtor', 'Tuition fees up to date', 'Gender', 'Scholarship holder', 'International']
-MODEL_NAMES = ['Logistic Regression', 'Decision Tree', 'KNN', 'Random Forest', 'XGBoost']
 
 def train_models(df, config, names, tune, trees, depth, neighbors, regularization):
     X = df[config['features']].copy()
@@ -58,7 +56,7 @@ def train_models(df, config, names, tune, trees, depth, neighbors, regularizatio
         else:
             score = cross_val_score(pipe, X_train, y_train, cv=cv, scoring='roc_auc').mean()
             pipe.fit(X_train, y_train)
-            parameters = models[name].get_params()
+            parameters = {key: models[name].get_params()[key.replace('model__', '')] for key in grids[name]}
         oof = cross_val_predict(pipe, X_train, y_train, cv=cv, method='predict_proba')[:, 0]
         results[name] = {'cv_auc': score, 'parameters': parameters, 'oof': oof, 'test': pipe.predict_proba(X_test)[:, 0]}
     return {'models': results, 'y_train': y_train.to_numpy(), 'y_test': y_test.to_numpy(), 'positive': str(config['positive'])}

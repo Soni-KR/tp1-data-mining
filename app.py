@@ -42,11 +42,7 @@ def reference():
     return pd.read_csv(PATH / 'reference.csv')
 
 def show_table(frame, **kwargs):
-    """Use an HTML table if Windows blocks Streamlit's optional Arrow DLL."""
-    try:
-        st.dataframe(frame, **kwargs)
-    except ImportError:
-        st.markdown('<div style="overflow:auto;max-height:450px">' + frame.to_html(index=not kwargs.get('hide_index', False), escape=True) + '</div>', unsafe_allow_html=True)
+    st.dataframe(frame, **kwargs)
 
 @st.cache_data(ttl=3600)
 def public_data():
@@ -89,7 +85,7 @@ if page == 'Overview':
         col.metric(label, value)
     st.subheader('Historical notebook results')
     st.caption('These are existing notebook measurements, not results from this dashboard run.')
-    show_table(pd.DataFrame({'Model': MODELS, 'CV ROC-AUC': [0.9348,0.8924,0.8775,0.9303,0.9351], 'Test ROC-AUC': [0.9406,0.9038,0.8762,0.9394,0.9404], 'Dropout F1': [0.8587,0.8302,0.6591,0.8387,0.8717]}), hide_index=True, use_container_width=True)
+    show_table(pd.DataFrame({'Model': MODELS, 'CV ROC-AUC': [0.9348,0.8924,0.8775,0.9303,0.9351], 'Test ROC-AUC': [0.9406,0.9038,0.8762,0.9394,0.9404], 'Dropout F1': [0.8587,0.8302,0.6591,0.8387,0.8717]}), hide_index=True, width='stretch')
     st.info('Saved model: XGBoost pipeline. Historical dropout precision 0.9390; recall 0.8134. SHAP/LIME (Module 5) is deferred.')
 
 elif page in ['Data exploration', 'Preprocessing', 'Model comparison']:
@@ -102,18 +98,18 @@ elif page in ['Data exploration', 'Preprocessing', 'Model comparison']:
         st.session_state.dataset_signature = signature
     if page == 'Data exploration':
         st.subheader('Explore the labeled data')
-        show_table(df.head(100), use_container_width=True)
+        show_table(df.head(100), width='stretch')
         st.write(f'{len(df):,} rows · {len(df.columns)-1} features · {df.duplicated().sum()} duplicate rows')
-        show_table(df.describe(include='all').T, use_container_width=True)
+        show_table(df.describe(include='all').T, width='stretch')
         st.subheader('Missing values')
         show_table(df.isna().sum().rename('Missing').to_frame())
-        st.plotly_chart(px.histogram(df, x=target, title='Target distribution'), use_container_width=True)
+        st.plotly_chart(px.histogram(df, x=target, title='Target distribution'), width='stretch')
         feature = st.selectbox('Explore feature', [c for c in df if c != target])
-        st.plotly_chart(px.histogram(df, x=feature, color=df[target].astype(str), barmode='overlay'), use_container_width=True)
+        st.plotly_chart(px.histogram(df, x=feature, color=df[target].astype(str), barmode='overlay'), width='stretch')
         corr = df.select_dtypes('number').corr()
-        st.plotly_chart(px.imshow(corr, color_continuous_scale='RdBu_r', zmin=-1, zmax=1, title='Numeric correlations'), use_container_width=True)
+        st.plotly_chart(px.imshow(corr, color_continuous_scale='RdBu_r', zmin=-1, zmax=1, title='Numeric correlations'), width='stretch')
         grouped = df.assign(interest=(df[target] == positive).astype(int)).groupby(feature, observed=True)['interest'].agg(['mean','count']).reset_index()
-        st.plotly_chart(px.bar(grouped, x=feature, y='mean', hover_data=['count'], title=f'Observed rate of class {positive} (association, not causation)'), use_container_width=True)
+        st.plotly_chart(px.bar(grouped, x=feature, y='mean', hover_data=['count'], title=f'Observed rate of class {positive} (association, not causation)'), width='stretch')
     else:
         candidates = [c for c in df if c != target]
         default_numeric = [c for c in candidates if c in NUMERIC or 'Curricular units 1st sem' in c] if set(reference().columns) <= set(candidates) else list(df[candidates].select_dtypes('number').columns)
@@ -147,7 +143,7 @@ elif page in ['Data exploration', 'Preprocessing', 'Model comparison']:
                         st.session_state.results = train_models(df, config, names, tune, trees, depth, neighbors, regularization)
                     st.session_state.config = config
                 except Exception as exc:
-                    st.error(f'Training unavailable: {exc}. Use the Linux environment if Windows blocks scikit-learn.')
+                    st.error(f'Training failed: {exc}. Check your CSV and preprocessing settings.')
             if 'results' in st.session_state:
                 show_table(pd.DataFrame([{'Model': name, 'CV ROC-AUC': result['cv_auc']} for name,result in st.session_state.results['models'].items()]), hide_index=True)
                 for name,result in st.session_state.results['models'].items():
@@ -181,11 +177,11 @@ elif page == 'Evaluation':
             roc.update_layout(title='ROC curves', xaxis_title='False positive rate', yaxis_title='Recall')
             pr.update_layout(title='Precision–recall curves', xaxis_title='Recall', yaxis_title='Precision')
             left,right = st.columns(2)
-            left.plotly_chart(roc, use_container_width=True)
-            right.plotly_chart(pr, use_container_width=True)
+            left.plotly_chart(roc, width='stretch')
+            right.plotly_chart(pr, width='stretch')
             name = st.selectbox('Confusion matrix model', list(results['models']))
             matrix = confusion_matrix(y, np.where(results['models'][name][key] >= threshold, 0, 1), labels=[0,1])
-            st.plotly_chart(px.imshow(matrix, text_auto=True, x=['Class of interest','Other class'], y=['Class of interest','Other class'], labels={'x':'Predicted','y':'Actual'}, color_continuous_scale='Blues'), use_container_width=True)
+            st.plotly_chart(px.imshow(matrix, text_auto=True, x=['Class of interest','Other class'], y=['Class of interest','Other class'], labels={'x':'Predicted','y':'Actual'}, color_continuous_scale='Blues'), width='stretch')
         except Exception as exc:
             st.error(f'Evaluation unavailable: {exc}')
 
@@ -213,7 +209,7 @@ elif page == 'Student prediction':
                         labels = {1:'Single',2:'Married',3:'Widower',4:'Divorced',5:'Facto union',6:'Legally separated'} if feature == 'Marital status' else {}
                         data[feature] = st.selectbox(feature, values, index=values.index(data[feature]), format_func=lambda v: f'{labels[v]} ({int(v)})' if v in labels else f'Dataset code {int(v)}')
         else:
-            show_table(pd.DataFrame([data]), use_container_width=True)
+            show_table(pd.DataFrame([data]), width='stretch')
         threshold = st.slider('Dropout decision threshold', 0.0, 1.0, 0.5, 0.01)
         submitted = st.form_submit_button('Predict', type='primary')
     if submitted:
@@ -226,7 +222,7 @@ elif page == 'Student prediction':
             st.write(f'Predicted outcome: **{result["prediction"]}**, using threshold {result["threshold"]:.2f}.')
             st.info('This estimate is not a confirmed future outcome. Students with increased risk may benefit from academic counseling, tutoring, financial-support assessment or supportive outreach.')
         except requests.RequestException as exc:
-            st.error('Prediction unavailable. Check FastAPI readiness and the API URL. Windows Application Control may prevent model loading.')
+            st.error('Prediction unavailable. Check API readiness and the FastAPI URL in the sidebar.')
             if exc.response is not None:
                 st.code(exc.response.text)
     st.caption('Application categories: Low <30%; Medium 30–<70%; High ≥70%. These boundaries are not statistically validated and do not change with the decision threshold.')
