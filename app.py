@@ -17,7 +17,7 @@ st.set_page_config(page_title='EduGuard', page_icon='🎓', layout='wide')
 st.markdown('<style>.stApp{background:#f6f8fc}h1,h2,h3{color:#102b50}div[data-testid="stMetric"]{background:white;padding:16px;border-radius:10px}</style>', unsafe_allow_html=True)
 st.title('🎓 EduGuard')
 st.caption('First-semester student dropout prediction & decision support · ENSI')
-page = st.sidebar.radio('Navigate', ['Overview', 'Data exploration', 'Preprocessing', 'Model comparison', 'Evaluation', 'Student prediction', 'About'])
+page = st.sidebar.radio('Navigate', ['Overview', 'Data exploration', 'Preprocessing', 'Model comparison', 'Evaluation', 'Explainability', 'Student prediction', 'About'])
 default_url = os.getenv('EDUGUARD_API_URL', 'http://127.0.0.1:8000')
 try:
     default_url = st.secrets.get('EDUGUARD_API_URL', default_url)
@@ -47,7 +47,7 @@ def show_table(frame, **kwargs):
 def public_data():
     local = PATH / 'data.csv'
     if local.exists():
-        return pd.read_csv(local, sep=None, engine='python')
+        return pd.read_csv(local, sep=None, engine='python', encoding='utf-8-sig')
     url = 'https://archive.ics.uci.edu/static/public/697/predict+students+dropout+and+academic+success.zip'
     response = requests.get(url, timeout=30)
     response.raise_for_status()
@@ -57,7 +57,7 @@ def public_data():
 
 def dataset():
     try:
-        df = pd.read_csv(uploaded_csv, sep=None, engine='python') if uploaded_csv else public_data()
+        df = pd.read_csv(uploaded_csv, sep=None, engine='python', encoding='utf-8-sig') if uploaded_csv else public_data()
     except Exception as exc:
         st.error(f'Could not load the labeled dataset. Upload a CSV or add data.csv. {exc}')
         st.stop()
@@ -76,6 +76,96 @@ def dataset():
     original = target == 'Target' and set(reference().columns) <= set(df.columns) and set(classes) == {0,1}
     positive = st.sidebar.selectbox('Class of interest (encoded as 0)', classes, index=classes.index(0) if 0 in classes else 0, disabled=original)
     return df, target, positive
+
+
+def feature_label(feature):
+    if 'Curricular units 1st sem (' in feature:
+        return feature.replace('Curricular units 1st sem (', 'Semester 1: ').replace(')', '', 1)
+    return feature
+
+
+def show_local(explanation):
+    shap = explanation['shap']
+    columns = shap['features']
+    values = np.asarray(shap['values'][0])
+    top = np.argsort(-np.abs(values))[:10]
+    rest = float(values.sum() - values[top].sum())
+    labels = ['Baseline'] + [feature_label(columns[i]) for i in top] + ['Other features', 'Model output']
+    waterfall = go.Figure(go.Waterfall(
+        orientation='h', y=labels,
+        x=[shap['base_values'][0]] + values[top].tolist() + [rest, 0],
+        measure=['absolute'] + ['relative'] * (len(top) + 1) + ['total'],
+        increasing={'marker': {'color': '#d64e59'}}, decreasing={'marker': {'color': '#245bb2'}},
+    ))
+    waterfall.update_layout(title='SHAP waterfall: contributions toward class 0',
+                            xaxis_title=f'Class-0 {shap["units"]}', yaxis={'autorange': 'reversed'}, height=540)
+    st.plotly_chart(waterfall, width='stretch')
+    st.caption(f'{shap["method"]}; encoded-column contributions are summed by input feature. Red raises the estimate; blue lowers it. '
+               'Baseline + all contributions = model output; log-odds require the logistic transform to get probability.')
+    lime = explanation['lime']
+    st.subheader('LIME: explanation of the same individual')
+    table = pd.DataFrame([(feature_label(rule), weight) for rule, weight in lime['rules']], columns=['Local condition', 'Class-0 weight'])
+    chart = px.bar(table.head(10).iloc[::-1], x='Class-0 weight', y='Local condition', orientation='h')
+    st.plotly_chart(chart, width='stretch')
+    st.caption(f'Local surrogate R²: {lime["r2"]:.3f} · Approximate probability: {lime["local_prediction"]:.1%} '
+               f'· Absolute error: {100*lime["absolute_error"]:.1f} percentage points · {lime["samples"]:,} perturbations')
+    if lime['r2'] < 0.5 or lime['absolute_error'] > 0.1:
+        st.warning('LIME fits this local neighborhood poorly. Treat its ranking cautiously.')
+    st.subheader('SHAP / LIME comparison')
+    shared = explanation['comparison']
+    st.write(f'{len(shared)} of the {explanation["top_count"]} highest-ranked features are shared. '
+             f'{sum(item["same_direction"] for item in shared)} shared features have the same direction.')
+    if shared:
+        show_table(pd.DataFrame(shared), hide_index=True)
+    st.info(explanation['summary'])
+    st.caption(explanation['note'])
+    st.caption('Review academic progress and fee difficulties with the student before proposing tutoring or financial support. '
+               'Age, gender, nationality and family circumstances require fairness review; an explanation is not a fairness audit.')
+
+
+def show_global(result):
+    columns = result['features']
+    if result['native'] is not None:
+        table = pd.DataFrame({'Feature': [feature_label(c) for c in columns], 'Importance': result['native']}).nlargest(12, 'Importance')
+        st.plotly_chart(px.bar(table.iloc[::-1], x='Importance', y='Feature', orientation='h', title='Model-specific importance'), width='stretch')
+    st.caption(result['native_method'] + '. Magnitudes use model-specific scales; compare models with permutation importance.')
+    if result['permutation'] is not None:
+        permutation = result['permutation']
+        table = pd.DataFrame({'Feature': [feature_label(c) for c in columns], 'AUC decrease': permutation['mean'], 'Std': permutation['std']}).nlargest(12, 'AUC decrease')
+        st.plotly_chart(px.bar(table.iloc[::-1], x='AUC decrease', y='Feature', error_x='Std', orientation='h', title='Permutation importance'), width='stretch')
+        st.caption(permutation['metric'] + '. Correlated inputs can share importance; negative values mean no reliable gain on this sample.')
+    shap = result['shap']
+    values = np.asarray(shap['values'])
+    top = np.argsort(-np.abs(values).mean(axis=0))[:12]
+    figure = go.Figure()
+    data = pd.DataFrame(result['data'], columns=columns)
+    for rank, index in enumerate(top[::-1]):
+        x = values[:, index]
+        # Stack points symmetrically within SHAP-value bins (beeswarm packing).
+        bins = np.round((x - x.min()) / (np.ptp(x) or 1) * 25).astype(int)
+        offsets = np.zeros(len(x))
+        for bucket in np.unique(bins):
+            members = np.flatnonzero(bins == bucket)
+            offsets[members] = [0 if j == 0 else (-1)**j * ((j+1)//2) for j in range(len(members))]
+        offsets *= 0.35 / max(1, np.abs(offsets).max())
+        color = pd.to_numeric(data.iloc[:, index], errors='coerce')
+        normalized = (color - color.min()) / (color.max() - color.min() or 1)
+        figure.add_scatter(x=x, y=rank + offsets, mode='markers', showlegend=False,
+                           text=data.iloc[:, index].astype(str),
+                           hovertemplate=columns[index] + '=%{text}<br>SHAP=%{x:.3f}<extra></extra>',
+                           marker={'color': normalized.fillna(0.5), 'cmin': 0, 'cmax': 1, 'colorscale': 'Bluered', 'size': 6,
+                                   'showscale': rank == 0, 'colorbar': {'title': 'Input value', 'tickvals': [0, 1], 'ticktext': ['Low', 'High']}})
+    figure.update_layout(title=f'SHAP summary (beeswarm) · {result["sample_size"]} rows',
+                         xaxis_title=f'Contribution toward class 0 ({shap["units"]})', height=550,
+                         yaxis={'tickvals': list(range(len(top))), 'ticktext': [feature_label(columns[i]) for i in top[::-1]]})
+    st.plotly_chart(figure, width='stretch')
+    st.caption(f'{shap["method"]}. Each dot is a row. Positive contributions raise the class-0 estimate. '
+               'Color shows the raw input value within each feature; category codes have no numerical ordering.')
+    feature = st.selectbox('SHAP dependence feature', [columns[i] for i in top[:5]])
+    index = columns.index(feature)
+    dependence = pd.DataFrame({feature: data[feature], 'SHAP contribution': values[:, index]})
+    st.plotly_chart(px.scatter(dependence, x=feature, y='SHAP contribution', title=f'SHAP dependence: {feature}'), width='stretch')
+    st.caption('Associations within this model and sample; not causal effects. Small samples and correlated features can change rankings.')
 
 if page == 'Overview':
     st.subheader('Identify students who may benefit from support')
@@ -184,6 +274,69 @@ elif page == 'Evaluation':
         except Exception as exc:
             st.error(f'Evaluation unavailable: {exc}')
 
+elif page == 'Explainability':
+    st.subheader('Understand model decisions')
+    experiments = st.session_state.get('results', {})
+    source = st.selectbox('Model to explain', ['Saved XGBoost (FastAPI)'] + list(experiments.get('models', {})))
+    sample_size = st.slider('Global explanation sample size', 20, 200, 60, 20)
+    saved_model = source == 'Saved XGBoost (FastAPI)'
+    identity = (source, sample_size, api_url if saved_model else id(experiments))
+    if saved_model:
+        st.caption('The saved model is explained through FastAPI. Global analysis samples the original UCI cohort, '
+                   'which may overlap training data; it is descriptive, not an independent performance estimate. '
+                   'The optional uploaded CSV does not replace this saved model’s cohort.')
+    else:
+        st.caption(f'Class of interest: {experiments["positive"]} (encoded as 0). '
+                   'Uses this fitted experiment, its training background and held-out rows. KNN uses sampled SHAP and can take longer.')
+    if st.button('Compute global explanations', type='primary'):
+        try:
+            with st.spinner('Computing importance, permutation importance and SHAP…'):
+                if saved_model:
+                    cohort = public_data()
+                    cohort.columns = cohort.columns.str.strip()
+                    cohort = cohort[cohort['Target'].isin(['Dropout', 'Graduate'])]
+                    cohort = cohort.sample(min(sample_size, len(cohort)), random_state=42)
+                    payload = {'data': cohort[reference().columns].astype(float).to_dict('records'),
+                               'labels': cohort['Target'].map({'Dropout': 0, 'Graduate': 1}).tolist()}
+                    response = requests.post(api_url.rstrip('/') + '/explain/global', json=payload, timeout=180)
+                    response.raise_for_status()
+                    result = response.json()
+                else:
+                    from xai import global_explanation
+                    rows = experiments['X_test'].sample(min(sample_size, len(experiments['X_test'])), random_state=42)
+                    labels = pd.Series(experiments['y_test'], index=experiments['X_test'].index).loc[rows.index].to_numpy()
+                    background = experiments['X_train'].sample(min(500, len(experiments['X_train'])), random_state=42)
+                    result = global_explanation(experiments['models'][source]['pipeline'], background, rows, labels)
+                st.session_state.xai_global = (identity, result)
+        except Exception as exc:
+            st.error(f'Global explanation unavailable: {exc}')
+    cached = st.session_state.get('xai_global')
+    if cached and cached[0] == identity:
+        show_global(cached[1])
+    st.info('For a saved-model SHAP waterfall and LIME comparison, open Student prediction and select Explain with SHAP and LIME.')
+    if not saved_model:
+        position = st.number_input('Held-out row position', 0, len(experiments['X_test']) - 1, 0)
+        local_threshold = st.slider('Class-0 decision threshold', 0.0, 1.0, 0.5, 0.01)
+        local_identity = (source, id(experiments), position)
+        row = experiments['X_test'].iloc[[position]]
+        show_table(row, hide_index=True)
+        model = experiments['models'][source]['pipeline']
+        probability = float(model.predict_proba(row)[0, list(model.classes_).index(0)])
+        st.write(f'Probability of {experiments["positive"]}: **{probability:.1%}**. '
+                 f'Decision: **{experiments["positive"] if probability >= local_threshold else "other class"}** '
+                 f'at threshold {local_threshold:.2f}.')
+        if st.button('Explain held-out individual'):
+            try:
+                from xai import local_explanation
+                with st.spinner('Computing SHAP and LIME for this individual…'):
+                    background = experiments['X_train'].sample(min(500, len(experiments['X_train'])), random_state=42)
+                    st.session_state.xai_local = (local_identity, local_explanation(model, background, row, class_label=f'class {experiments["positive"]}'))
+            except Exception as exc:
+                st.error(f'Local explanation unavailable: {exc}')
+        cached_local = st.session_state.get('xai_local')
+        if cached_local and cached_local[0] == local_identity:
+            show_local(cached_local[1])
+
 elif page == 'Student prediction':
     st.subheader('Estimate student dropout risk')
     df = reference()
@@ -210,13 +363,14 @@ elif page == 'Student prediction':
         else:
             show_table(pd.DataFrame([data]), width='stretch')
         threshold = st.slider('Dropout decision threshold', 0.0, 1.0, 0.5, 0.01)
+        explain_prediction = st.checkbox('Explain with SHAP and LIME')
         submitted = st.form_submit_button('Predict', type='primary')
     if submitted:
         try:
             response = requests.post(
-                api_url.rstrip('/') + '/predict',
+                api_url.rstrip('/') + ('/explain' if explain_prediction else '/predict'),
                 json={'data': {k:float(v) for k,v in data.items()}, 'threshold': threshold},
-                timeout=30,
+                timeout=180 if explain_prediction else 30,
             )
             response.raise_for_status()
             result = response.json()
@@ -226,6 +380,8 @@ elif page == 'Student prediction':
             c.metric('Risk category', result['risk_level'])
             st.write(f'Predicted outcome: **{result["prediction"]}**, using threshold {result["threshold"]:.2f}.')
             st.info('This estimate is not a confirmed future outcome. Students with increased risk may benefit from academic counseling, tutoring, financial-support assessment or supportive outreach.')
+            if 'explanation' in result:
+                show_local(result['explanation'])
         except requests.RequestException as exc:
             st.error('Prediction unavailable. Check API readiness and the FastAPI URL in the sidebar.')
             if exc.response is not None:

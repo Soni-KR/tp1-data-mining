@@ -58,8 +58,8 @@ def train_models(df, config, names, tune, trees, depth, neighbors, regularizatio
             pipe.fit(X_train, y_train)
             parameters = {key: models[name].get_params()[key.replace('model__', '')] for key in grids[name]}
         oof = cross_val_predict(pipe, X_train, y_train, cv=cv, method='predict_proba')[:, 0]
-        results[name] = {'cv_auc': score, 'parameters': parameters, 'oof': oof, 'test': pipe.predict_proba(X_test)[:, 0]}
-    return {'models': results, 'y_train': y_train.to_numpy(), 'y_test': y_test.to_numpy(), 'positive': str(config['positive'])}
+        results[name] = {'cv_auc': score, 'parameters': parameters, 'oof': oof, 'test': pipe.predict_proba(X_test)[:, 0], 'pipeline': pipe}
+    return {'models': results, 'y_train': y_train.to_numpy(), 'y_test': y_test.to_numpy(), 'X_train': X_train, 'X_test': X_test, 'positive': str(config['positive'])}
 
 def metrics(y, probability, threshold):
     pred = np.where(probability >= threshold, 0, 1)

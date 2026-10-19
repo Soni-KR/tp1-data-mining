@@ -4,6 +4,7 @@ from functools import lru_cache
 import math
 import joblib
 import pandas as pd
+from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,27 @@ class Prediction(BaseModel):
     risk_level: str
     threshold: float
 
+class Cohort(BaseModel):
+    model_config = {'json_schema_extra': {'example': {
+        'data': pd.read_csv(path / 'reference.csv', nrows=2).to_dict('records'),
+    }}}
+    data: list[dict[str, float]] = Field(min_length=2, max_length=200)
+    labels: list[Literal[0, 1]] | None = None
+
+
+def validate_data(data):
+    missing = sorted(set(features) - set(data))
+    unexpected = sorted(set(data) - set(features))
+    if missing or unexpected:
+        raise HTTPException(422, detail={"missing_features": missing, "unexpected_features": unexpected})
+    if not all(math.isfinite(v) for v in data.values()):
+        raise HTTPException(422, "Feature values must be finite numbers")
+
+
+def background():
+    frame = pd.read_csv(path / 'reference.csv')
+    return frame.sample(min(500, len(frame)), random_state=42)
+
 @app.get("/")
 def home():
     return {"message": "EduGuard API is running", "docs": "/docs"}
@@ -65,12 +87,7 @@ def get_features():
 
 @app.post("/predict", response_model=Prediction)
 def predict(student: Student):
-    missing = sorted(set(features) - set(student.data))
-    unexpected = sorted(set(student.data) - set(features))
-    if missing or unexpected:
-        raise HTTPException(422, detail={"missing_features": missing, "unexpected_features": unexpected})
-    if not all(math.isfinite(v) for v in student.data.values()):
-        raise HTTPException(422, "Feature values must be finite numbers")
+    validate_data(student.data)
     try:
         model = get_model()
         probabilities = model.predict_proba(pd.DataFrame([student.data])[features])[0]
@@ -86,3 +103,33 @@ def predict(student: Student):
         "risk_level": "Low" if prob < 0.3 else "Medium" if prob < 0.7 else "High",
         "threshold": student.threshold,
     }
+
+
+@app.post('/explain', summary='Explain one student with SHAP and LIME')
+def explain(student: Student):
+    """Same prediction as /predict, plus class-0 SHAP, LIME and a summary."""
+    prediction = predict(student)
+    try:
+        from xai import local_explanation
+        explanation = local_explanation(get_model(), background(), pd.DataFrame([student.data])[features], class_label='dropout')
+    except Exception as exc:
+        raise HTTPException(503, detail=f'Explanation unavailable: {exc}')
+    return {**prediction, 'explanation': explanation}
+
+
+@app.post('/explain/global', summary='Global importance and SHAP for a cohort (2-200 rows)')
+def explain_global(cohort: Cohort):
+    """Returns model importance and SHAP. Add one true 0/1 label per row
+    (both classes required) to compute ROC-AUC permutation importance.
+    A supplied cohort is not assumed to be an independent test set.
+    """
+    for row in cohort.data:
+        validate_data(row)
+    if cohort.labels is not None and (len(cohort.labels) != len(cohort.data) or set(cohort.labels) != {0, 1}):
+        raise HTTPException(422, 'Labels must match the rows and include both classes: Dropout=0, Graduate=1')
+    try:
+        from xai import global_explanation
+        explanation = global_explanation(get_model(), background(), pd.DataFrame(cohort.data)[features], cohort.labels)
+    except Exception as exc:
+        raise HTTPException(503, detail=f'Global explanation unavailable: {exc}')
+    return {**explanation, 'scope': 'Supplied cohort; may overlap model training data. Descriptive importance, not an independent performance estimate.'}

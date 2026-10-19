@@ -64,3 +64,33 @@ def test_real_pipeline_predictions():
         assert result['prediction'] == ('Dropout' if result['dropout_probability'] >= threshold else 'Graduate')
         assert result['threshold'] == threshold
         assert result['risk_level'] in ['Low', 'Medium', 'High']
+
+
+def test_real_local_and_global_explanation_endpoints():
+    response = client.post('/explain', json={'data': student, 'threshold': .9})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['prediction'] == 'Graduate'
+    assert result['dropout_probability'] == client.post('/predict', json={'data': student}).json()['dropout_probability']
+    explanation = result['explanation']
+    assert explanation['shap']['features'] == api.features
+    assert len(explanation['lime']['weights']) == 30
+    assert 'causal' in explanation['note']
+    response = client.post('/explain/global', json={'data': [student, student]})
+    assert response.status_code == 200, response.text
+    assert response.json()['sample_size'] == 2
+    assert response.json()['permutation'] is None
+
+
+def test_explanation_input_validation_and_unavailability(monkeypatch):
+    assert client.post('/explain', json={'data': {}}).status_code == 422
+    assert client.post('/explain/global', json={'data': [student]}).status_code == 422
+    assert client.post('/explain/global', json={'data': [student] * 201}).status_code == 422
+    assert client.post('/explain/global', json={'data': [student, student], 'labels': [0]}).status_code == 422
+    assert client.post('/explain/global', json={'data': [student, student], 'labels': [0, 0]}).status_code == 422
+    assert client.post('/explain/global', json={'data': [{}, {}]}).status_code == 422
+    def unavailable():
+        raise ImportError('Unavailable')
+    monkeypatch.setattr(api, 'get_model', unavailable)
+    assert client.post('/explain', json={'data': student}).status_code == 503
+    assert client.post('/explain/global', json={'data': [student, student]}).status_code == 503
